@@ -390,6 +390,79 @@ def package_pid(package_name):
     return ""
 
 
+def installed_packages():
+    raw = out("pm list packages")
+    packages = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith("package:"):
+            packages.append(line.replace("package:", "", 1))
+    return sorted(set(packages))
+
+
+def package_label(package_name):
+    dump_cmd = f"cmd package dump {shlex.quote(package_name)}"
+    raw = out(dump_cmd)
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith("application-label:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def choose_package():
+    query = input(c("Search app/package name: ", "yellow")).strip().lower()
+    if not query:
+        return ""
+
+    matches = []
+    for pkg in installed_packages():
+        label = package_label(pkg)
+        haystack = f"{pkg} {label}".lower()
+        if query in haystack:
+            matches.append((pkg, label))
+        if len(matches) >= 30:
+            break
+
+    if not matches:
+        print(c("[-] No package found", "red"))
+        return ""
+
+    print(c("\nPackage results:", "cyan"))
+    for idx, (pkg, label) in enumerate(matches, start=1):
+        suffix = f" - {label}" if label else ""
+        print(c(f"{idx}. {pkg}{suffix}", "green"))
+
+    selected = input(c("\nSelect package number or type package: ", "yellow")).strip()
+    if not selected:
+        return ""
+    if selected.isdigit():
+        index = int(selected)
+        if 1 <= index <= len(matches):
+            return matches[index - 1][0]
+        print(c("[-] Invalid package number", "red"))
+        return ""
+    return selected
+
+
+def ask_package_name():
+    print(c("\nPackage input:", "cyan"))
+    print(c("1. Search installed packages", "green"))
+    print(c("2. Type package manually", "green"))
+
+    selected = input(c("\nSelect [1]: ", "yellow")).strip()
+    if not selected:
+        selected = "1"
+
+    if selected == "1":
+        return choose_package()
+    if selected == "2":
+        return input(c("Enter APK package name, example com.via: ", "yellow")).strip()
+
+    print(c("[-] Invalid option", "red"))
+    return ""
+
+
 def run_frida_script():
     start_frida_server()
 
@@ -403,7 +476,7 @@ def run_frida_script():
 
     package_name = ""
     if mode in ["pid", "attach", "spawn"]:
-        package_name = input(c("Enter APK package name, example com.via: ", "yellow")).strip()
+        package_name = ask_package_name()
     if mode in ["pid", "attach", "spawn"] and not package_name:
         print(c("[-] Package name is required", "red"))
         return False
@@ -469,6 +542,7 @@ def menu():
         print(c("2. Start Frida Server", "green"))
         print(c("3. Stop Frida", "green"))
         print(c("4. Run Frida Script", "green"))
+        print(c("5. Package Finder", "green"))
         print(c("0. Exit", "red"))
 
         choice = input(c("\nSelect option: ", "yellow")).strip()
@@ -481,6 +555,10 @@ def menu():
             stop_frida_server()
         elif choice == "4":
             run_frida_script()
+        elif choice == "5":
+            package_name = choose_package()
+            if package_name:
+                print(c(f"[OK] Selected package: {package_name}", "green"))
         elif choice == "0":
             print(c("Bye", "cyan"))
             break
