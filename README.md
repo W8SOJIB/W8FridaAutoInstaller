@@ -28,6 +28,7 @@ Created by: **W8SOJIB / W8Team**
 
 ## 📥 Installation
 
+### Method 1: Automated (Recommended)
 Copy and paste the following commands into your Termux terminal:
 
 ```bash
@@ -39,7 +40,44 @@ pip install -r requirements.txt
 python FridaAutoInstaller.py
 ```
 
+### Method 2: Manual Setup (Pro Way)
+If you prefer to set up Frida manually or the automated script faces environment issues, follow these steps:
+
+**1. Install Required Packages**
+```bash
+pkg update -y && pkg upgrade -y
+pkg install wget unzip xz-utils tsu -y
+pkg install frida-tools frida-python -y
+```
+*Verify with:* `frida --version`
+
+**2. Download & Extract Frida Server**
+Check your architecture first with `uname -m`. For most modern phones (`aarch64`):
+```bash
+wget https://github.com/frida/frida/releases/latest/download/frida-server-android-arm64.xz
+unxz frida-server-android-arm64.xz
+mv frida-server-android-arm64 frida-server
+chmod +x frida-server
+```
+
+**3. Deploy to System**
+```bash
+su -c "mv frida-server /data/local/tmp/"
+su -c "chmod 755 /data/local/tmp/frida-server"
+```
+
+**4. Start Server**
+```bash
+su -c "pkill frida-server; nohup /data/local/tmp/frida-server > /dev/null 2>&1 &"
+```
+
+**5. Test Connection**
+```bash
+frida-ps -U
+```
+
 ---
+
 
 ## 🛠️ Usage Guide
 
