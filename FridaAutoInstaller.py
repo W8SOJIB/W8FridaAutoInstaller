@@ -347,6 +347,36 @@ def choose_script():
     return ""
 
 
+def choose_run_mode():
+    print(c("\nSelect run mode:", "cyan"))
+    print(c("1. Attach running app by package name (recommended for spawn timeout)", "green"))
+    print(c("2. Spawn app by package name", "green"))
+    print(c("3. Attach frontmost app", "green"))
+
+    selected = input(c("\nEnter mode [1]: ", "yellow")).strip()
+    if not selected:
+        selected = "1"
+
+    if selected == "1":
+        return "attach"
+    if selected == "2":
+        return "spawn"
+    if selected == "3":
+        return "frontmost"
+
+    print(c("[-] Invalid mode", "red"))
+    return ""
+
+
+def launch_package(package_name):
+    monkey_cmd = (
+        f"monkey -p {shlex.quote(package_name)} "
+        "-c android.intent.category.LAUNCHER 1 >/dev/null 2>&1"
+    )
+    run(f"su -c {shlex.quote(monkey_cmd)}", critical=False)
+    time.sleep(2)
+
+
 def run_frida_script():
     start_frida_server()
 
@@ -354,8 +384,14 @@ def run_frida_script():
     if not script:
         return False
 
-    package_name = input(c("Enter APK package name, example com.via: ", "yellow")).strip()
-    if not package_name:
+    mode = choose_run_mode()
+    if not mode:
+        return False
+
+    package_name = ""
+    if mode in ["attach", "spawn"]:
+        package_name = input(c("Enter APK package name, example com.via: ", "yellow")).strip()
+    if mode in ["attach", "spawn"] and not package_name:
         print(c("[-] Package name is required", "red"))
         return False
 
@@ -366,10 +402,28 @@ def run_frida_script():
         run(f"su -c {shlex.quote(f'cp {src} {dst}; chmod 644 {dst}')}")
 
     print(c("\n[OK] Running Frida script", "green"))
-    print(c(f"[+] Package: {package_name}", "cyan"))
+    print(c(f"[+] Mode: {mode}", "cyan"))
+    if package_name:
+        print(c(f"[+] Package: {package_name}", "cyan"))
     print(c(f"[+] Script: {script_name}", "cyan"))
+
+    if mode == "attach":
+        launch_package(package_name)
+        command = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+        return run(f"su -c {shlex.quote(command)}", critical=False)
+
+    if mode == "frontmost":
+        command = f"cd {LOCAL_TMP} && ./frida -F -l {shlex.quote(script_name)}"
+        return run(f"su -c {shlex.quote(command)}", critical=False)
+
     command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
-    return run(f"su -c {shlex.quote(command)}", critical=False)
+    if run(f"su -c {shlex.quote(command)}", critical=False):
+        return True
+
+    print(c("[!] Spawn failed. Trying attach mode after launching the app...", "yellow"))
+    launch_package(package_name)
+    fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+    return run(f"su -c {shlex.quote(fallback)}", critical=False)
 
 
 def menu():
