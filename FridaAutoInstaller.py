@@ -80,6 +80,16 @@ def run_termux(cmd, critical=True):
     return ok
 
 
+def run_frida_client(cmd):
+    if run_termux(cmd, critical=False):
+        return True
+
+    print(c("[!] Frida command failed. Restarting server and retrying once...", "yellow"))
+    start_frida_server()
+    time.sleep(1)
+    return run_termux(cmd, critical=False)
+
+
 def out(cmd):
     return subprocess.getoutput(cmd).strip()
 
@@ -322,6 +332,7 @@ def start_frida_server():
     server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
     root_cmd = (
         f"cd {LOCAL_TMP}; "
+        "setenforce 0 >/dev/null 2>&1 || true; "
         "pkill frida-server >/dev/null 2>&1 || true; "
         f"pkill {SERVER_NAME} >/dev/null 2>&1 || true; "
         f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
@@ -587,7 +598,11 @@ def run_frida_script():
             return False
         print(c(f"[+] PID: {pid}", "cyan"))
         command = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        return run_termux(command, critical=False)
+        if run_frida_client(command):
+            return True
+        print(c("[!] PID attach failed. Trying frontmost app attach...", "yellow"))
+        fallback = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
+        return run_frida_client(fallback)
 
     if mode == "attach":
         launch_package(package_name)
@@ -595,20 +610,23 @@ def run_frida_script():
         if pid:
             print(c(f"[+] Detected PID: {pid}", "cyan"))
         command = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        if run_termux(command, critical=False):
+        if run_frida_client(command):
             return True
         if pid:
             print(c("[!] Package-name attach failed. Trying PID attach...", "yellow"))
             fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-            return run_termux(fallback, critical=False)
-        return False
+            if run_frida_client(fallback):
+                return True
+        print(c("[!] Attach failed. Trying frontmost app attach...", "yellow"))
+        fallback = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
+        return run_frida_client(fallback)
 
     if mode == "frontmost":
         command = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        return run_termux(command, critical=False)
+        return run_frida_client(command)
 
     command = frida_client_cmd(f"-f {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-    if run_termux(command, critical=False):
+    if run_frida_client(command):
         return True
 
     print(c("[!] Spawn failed. Trying attach mode after launching the app...", "yellow"))
@@ -616,9 +634,16 @@ def run_frida_script():
     pid = package_pid(package_name)
     if pid:
         fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
+        if run_frida_client(fallback):
+            return True
     else:
         fallback = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-    return run_termux(fallback, critical=False)
+        if run_frida_client(fallback):
+            return True
+
+    print(c("[!] Attach fallback failed. Trying frontmost app attach...", "yellow"))
+    frontmost = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
+    return run_frida_client(frontmost)
 
 
 def menu():
