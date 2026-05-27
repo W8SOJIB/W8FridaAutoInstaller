@@ -306,8 +306,8 @@ def start_frida_server():
     server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
     root_cmd = (
         f"cd {LOCAL_TMP}; "
-        "pkill -f frida-server >/dev/null 2>&1; "
-        f"pkill -f {SERVER_NAME} >/dev/null 2>&1; "
+        "pkill frida-server >/dev/null 2>&1 || true; "
+        f"pkill {SERVER_NAME} >/dev/null 2>&1 || true; "
         f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
         f"chmod 755 {SERVER_NAME}; "
         f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
@@ -325,7 +325,8 @@ def start_frida_server():
 
 
 def stop_frida_server():
-    run(f"su -c {shlex.quote(f'pkill -f frida-server >/dev/null 2>&1; pkill -f {SERVER_NAME} >/dev/null 2>&1')}", critical=False)
+    stop_cmd = f"pkill frida-server >/dev/null 2>&1 || true; pkill {SERVER_NAME} >/dev/null 2>&1 || true"
+    run(f"su -c {shlex.quote(stop_cmd)}", critical=False)
     print(c("[OK] frida-server stopped", "green"))
     return True
 
