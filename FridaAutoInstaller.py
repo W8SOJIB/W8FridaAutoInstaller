@@ -20,9 +20,21 @@ def out(cmd):
 
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
+FRIDA_HOST = "127.0.0.1:27042"
 
 def frida_env_cmd(cmd):
     return f"LD_PRELOAD={LIBPYTHON} {cmd}"
+
+def run_with_timeout(cmd, timeout=10):
+    try:
+        result = subprocess.run(cmd, shell=True, timeout=timeout)
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print(f"[!] Timed out: {cmd}")
+        return False
+
+def test_frida_connection():
+    return run_with_timeout(frida_env_cmd(f"frida-ps -H {FRIDA_HOST}"), timeout=10)
 
 def fix_frida_tool_wrappers():
     if not os.path.exists(LIBPYTHON):
@@ -174,20 +186,20 @@ time.sleep(3)
 
 # --- test ---
 print("\n[*] Testing frida connection...")
-if os.system(frida_env_cmd("frida-ps -U")) != 0:
+if not test_frida_connection():
     print("[!] frida-ps not working, auto-repairing...")
 
     run("pkg install frida-python -y", critical=False)
     fix_frida_tool_wrappers()
 
     print("\n[*] Retesting...")
-    tools_ok = os.system(frida_env_cmd("frida-ps -U")) == 0
+    tools_ok = test_frida_connection()
 else:
     tools_ok = True
 
 if not tools_ok:
     print("[-] frida-ps is still not working.")
-    print(f"[-] Try manually: LD_PRELOAD={LIBPYTHON} frida-ps -U")
+    print(f"[-] Try manually: LD_PRELOAD={LIBPYTHON} frida-ps -H {FRIDA_HOST}")
     exit(1)
 
 print("\n[OK] FULL AUTO FRIDA INSTALL COMPLETE")
