@@ -10,9 +10,9 @@ import urllib.request
 TOOL_NAME = "W8FridaAutoInstaller"
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
-FRIDA_HOST = "127.0.0.1:37123"
+FRIDA_HOST = "127.0.0.1:27042"
 LOCAL_TMP = "/data/local/tmp"
-SERVER_NAME = ".w8fs"
+SERVER_NAME = "frida-server"
 
 COLORS = {
     "green": "\033[92m",
@@ -259,11 +259,10 @@ def download_frida_server():
     root_cmd = (
         f"mkdir -p {LOCAL_TMP}; "
         f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/frida-server; "
-        f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/{SERVER_NAME}; "
-        f"chmod 755 {LOCAL_TMP}/frida-server {LOCAL_TMP}/{SERVER_NAME}"
+        f"chmod 755 {LOCAL_TMP}/frida-server"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
-    print(c(f"[OK] frida-server installed to /data/local/tmp/{SERVER_NAME}", "green"))
+    print(c("[OK] frida-server installed to /data/local/tmp/frida-server", "green"))
     return True
 
 
@@ -334,10 +333,8 @@ def start_frida_server():
         f"cd {LOCAL_TMP}; "
         "setenforce 0 >/dev/null 2>&1 || true; "
         "pkill frida-server >/dev/null 2>&1 || true; "
-        f"pkill {SERVER_NAME} >/dev/null 2>&1 || true; "
-        f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
         f"chmod 755 {SERVER_NAME}; "
-        f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
+        f"nohup {server_path} >/dev/null 2>&1 &"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
     time.sleep(2)
@@ -352,10 +349,27 @@ def start_frida_server():
 
 
 def stop_frida_server():
-    stop_cmd = f"pkill frida-server >/dev/null 2>&1 || true; pkill {SERVER_NAME} >/dev/null 2>&1 || true"
+    stop_cmd = "pkill frida-server >/dev/null 2>&1 || true"
     run(f"su -c {shlex.quote(stop_cmd)}", critical=False)
     print(c("[OK] frida-server stopped", "green"))
     return True
+
+
+def health_check():
+    print(c("\n[*] Frida health check", "yellow"))
+    print(c(f"[+] Host: {FRIDA_HOST}", "cyan"))
+    print(c(f"[+] Client version: {out(frida_env_cmd('frida --version'))}", "cyan"))
+    print(c(f"[+] Python frida version: {get_installed_frida_version()}", "cyan"))
+    print(c("[+] Server processes:", "cyan"))
+    print(out("su -c 'ps -A | grep frida'"))
+    print(c("[+] Port check:", "cyan"))
+    print(out("su -c 'netstat -tnlp 2>/dev/null | grep 27042'"))
+
+    if frida_server_ok():
+        print(c("[OK] frida-server process listing works", "green"))
+    else:
+        print(c("[-] frida-server process listing failed", "red"))
+        print(c("[-] Run option 2, then retry health check.", "yellow"))
 
 
 def available_scripts():
@@ -654,6 +668,7 @@ def menu():
         print(c("3. Stop Frida", "green"))
         print(c("4. Run Frida Script", "green"))
         print(c("5. Package Finder", "green"))
+        print(c("6. Frida Health Check", "green"))
         print(c("0. Exit", "red"))
 
         choice = input(c("\nSelect option: ", "yellow")).strip()
@@ -670,6 +685,8 @@ def menu():
             package_name = choose_package()
             if package_name:
                 print(c(f"[OK] Selected package: {package_name}", "green"))
+        elif choice == "6":
+            health_check()
         elif choice == "0":
             print(c("Bye", "cyan"))
             break
