@@ -349,19 +349,22 @@ def choose_script():
 
 def choose_run_mode():
     print(c("\nSelect run mode:", "cyan"))
-    print(c("1. Attach running app by package name (recommended for spawn timeout)", "green"))
-    print(c("2. Spawn app by package name", "green"))
-    print(c("3. Attach frontmost app", "green"))
+    print(c("1. Attach by PID after launching package (recommended)", "green"))
+    print(c("2. Attach running app by package name", "green"))
+    print(c("3. Spawn app by package name", "green"))
+    print(c("4. Attach frontmost app", "green"))
 
     selected = input(c("\nEnter mode [1]: ", "yellow")).strip()
     if not selected:
         selected = "1"
 
     if selected == "1":
-        return "attach"
+        return "pid"
     if selected == "2":
-        return "spawn"
+        return "attach"
     if selected == "3":
+        return "spawn"
+    if selected == "4":
         return "frontmost"
 
     print(c("[-] Invalid mode", "red"))
@@ -377,6 +380,15 @@ def launch_package(package_name):
     time.sleep(2)
 
 
+def package_pid(package_name):
+    pid_cmd = f"pidof {shlex.quote(package_name)}"
+    result = out(f"su -c {shlex.quote(pid_cmd)}")
+    pids = [part for part in result.split() if part.isdigit()]
+    if pids:
+        return pids[0]
+    return ""
+
+
 def run_frida_script():
     start_frida_server()
 
@@ -389,9 +401,9 @@ def run_frida_script():
         return False
 
     package_name = ""
-    if mode in ["attach", "spawn"]:
+    if mode in ["pid", "attach", "spawn"]:
         package_name = input(c("Enter APK package name, example com.via: ", "yellow")).strip()
-    if mode in ["attach", "spawn"] and not package_name:
+    if mode in ["pid", "attach", "spawn"] and not package_name:
         print(c("[-] Package name is required", "red"))
         return False
 
@@ -407,10 +419,29 @@ def run_frida_script():
         print(c(f"[+] Package: {package_name}", "cyan"))
     print(c(f"[+] Script: {script_name}", "cyan"))
 
+    if mode == "pid":
+        launch_package(package_name)
+        pid = package_pid(package_name)
+        if not pid:
+            print(c("[-] Could not find app PID. Open the app manually, then retry mode 1.", "red"))
+            return False
+        print(c(f"[+] PID: {pid}", "cyan"))
+        command = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+        return run(f"su -c {shlex.quote(command)}", critical=False)
+
     if mode == "attach":
         launch_package(package_name)
+        pid = package_pid(package_name)
+        if pid:
+            print(c(f"[+] Detected PID: {pid}", "cyan"))
         command = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
-        return run(f"su -c {shlex.quote(command)}", critical=False)
+        if run(f"su -c {shlex.quote(command)}", critical=False):
+            return True
+        if pid:
+            print(c("[!] Package-name attach failed. Trying PID attach...", "yellow"))
+            fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+            return run(f"su -c {shlex.quote(fallback)}", critical=False)
+        return False
 
     if mode == "frontmost":
         command = f"cd {LOCAL_TMP} && ./frida -F -l {shlex.quote(script_name)}"
@@ -422,7 +453,11 @@ def run_frida_script():
 
     print(c("[!] Spawn failed. Trying attach mode after launching the app...", "yellow"))
     launch_package(package_name)
-    fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+    pid = package_pid(package_name)
+    if pid:
+        fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+    else:
+        fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
     return run(f"su -c {shlex.quote(fallback)}", critical=False)
 
 
