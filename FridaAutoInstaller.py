@@ -1,17 +1,24 @@
 import os
-import re
+import subprocess
 import json
 import urllib.request
-import subprocess
 
-def run(cmd):
-    print(f"\n[+] Running: {cmd}")
-    os.system(cmd)
+def run(cmd, critical=True):
+    print(f"\n[+] {cmd}")
+    code = os.system(cmd)
+    if code != 0:
+        print(f"[!] FAILED: {cmd}")
+        if critical:
+            exit(1)
+        return False
+    return True
 
-print("[*] Detecting CPU architecture...")
+def get_output(cmd):
+    return subprocess.getoutput(cmd).strip()
 
-abi = subprocess.getoutput("getprop ro.product.cpu.abi").strip()
-print(f"[+] CPU ABI: {abi}")
+print("\n[*] Detecting CPU architecture...")
+abi = get_output("getprop ro.product.cpu.abi")
+print("[+] ABI:", abi)
 
 if "arm64" in abi:
     arch = "android-arm64"
@@ -19,61 +26,61 @@ elif "armeabi" in abi or "arm" in abi:
     arch = "android-arm"
 elif "x86_64" in abi:
     arch = "android-x86_64"
-elif "x86" in abi:
-    arch = "android-x86"
 else:
-    print("[-] Unsupported architecture!")
-    exit()
+    print("[-] Unsupported architecture")
+    exit(1)
 
-print(f"[+] Using Frida architecture: {arch}")
+print("[+] Using arch:", arch)
 
-print("[*] Fetching latest Frida release...")
+print("\n[*] Installing dependencies...")
+run("pkg install wget xz-utils python clang make openssl libffi rust -y")
 
-api_url = "https://api.github.com/repos/frida/frida/releases/latest"
+print("\n[*] Installing frida-tools (FIXED METHOD)...")
+run("pip install --no-cache-dir frida-tools --break-system-packages", critical=False)
+
+print("\n[*] Getting latest Frida version...")
+api = "https://api.github.com/repos/frida/frida/releases/latest"
 
 try:
-    with urllib.request.urlopen(api_url) as response:
-        data = json.loads(response.read().decode())
-
+    data = json.loads(urllib.request.urlopen(api).read().decode())
     version = data["tag_name"]
-    version_clean = version.replace("v", "")
+    ver = version.replace("v", "")
+except:
+    print("[-] Failed to fetch version")
+    exit(1)
 
-    filename = f"frida-server-{version_clean}-{arch}.xz"
-    download_url = f"https://github.com/frida/frida/releases/download/{version}/{filename}"
+filename = f"frida-server-{ver}-{arch}.xz"
+url = f"https://github.com/frida/frida/releases/download/{version}/{filename}"
 
-    print(f"[+] Latest Version: {version_clean}")
-    print(f"[+] Download URL: {download_url}")
+print("[+] Version:", ver)
+print("[+] Download URL:", url)
 
-except Exception as e:
-    print(f"[-] Failed to fetch release info: {e}")
-    exit()
+print("\n[*] Downloading Frida server...")
+run(f"wget -O {filename} {url}")
 
-print("[*] Downloading Frida server...")
-run(f"wget -O {filename} {download_url}")
-
-print("[*] Extracting...")
+print("\n[*] Extracting...")
 run(f"unxz -f {filename}")
 
-server_file = filename.replace(".xz", "")
+server = filename.replace(".xz", "")
 
-print("[*] Renaming...")
-run(f"mv {server_file} frida-server")
+print("\n[*] Renaming...")
+run(f"mv {server} frida-server")
 
-print("[*] Setting execute permission...")
+print("\n[*] Making executable...")
 run("chmod +x frida-server")
 
-print("[*] Moving to /data/local/tmp/ and starting as root...")
-
-root_commands = """
+print("\n[*] Moving to root location and starting...")
+root_cmd = """
 mv frida-server /data/local/tmp/
 chmod 755 /data/local/tmp/frida-server
 pkill frida-server
 /data/local/tmp/frida-server &
 """
 
-run(f'''su -c '{root_commands}' ''')
+run(f"su -c '{root_cmd}'")
 
-print("[*] Testing Frida connection...")
-run("frida-ps -U")
+print("\n[*] Testing frida connection...")
+run("frida-ps -U", critical=False)
 
-print("\n[✓] Frida setup completed!")
+print("\n[✓] DONE")
+print("[*] If frida-ps not found, run: pip install frida-tools")
