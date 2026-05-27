@@ -312,14 +312,15 @@ def start_frida_server():
         push_frida_server()
 
     deploy_assets()
-    server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
+    server_target = f"{LOCAL_TMP}/{SERVER_NAME}"
+    server_source = f"{LOCAL_TMP}/frida-server"
+    
     root_cmd = (
-        f"cd {LOCAL_TMP} || exit 1; "
-        "pkill -f frida-server >/dev/null 2>&1 || true; "
-        f"pkill -f {SERVER_NAME} >/dev/null 2>&1 || true; "
-        f"cp -f frida-server {SERVER_NAME} >/dev/null 2>&1; "
-        f"chmod 755 {SERVER_NAME}; "
-        f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
+        f"pkill -f {SERVER_NAME} || true; "
+        f"pkill -f frida-server || true; "
+        f"cp -f {server_source} {server_target} || true; "
+        f"chmod 755 {server_target} || true; "
+        f"nohup {server_target} -l {FRIDA_HOST} >/dev/null 2>&1 &"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
     time.sleep(2)
