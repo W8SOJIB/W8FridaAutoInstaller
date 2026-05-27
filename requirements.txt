@@ -1,0 +1,3 @@
+# No pip packages are required.
+# Termux packages are installed by FridaAutoInstaller.py:
+# root-repo wget xz-utils python git which frida-python
