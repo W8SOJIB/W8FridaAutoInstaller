@@ -394,8 +394,14 @@ def installed_packages():
     commands = [
         "pm list packages",
         "cmd package list packages",
+        "/system/bin/pm list packages",
+        "/system/bin/cmd package list packages",
         "su -c 'pm list packages'",
         "su -c 'cmd package list packages'",
+        "su -c '/system/bin/pm list packages'",
+        "su -c '/system/bin/cmd package list packages'",
+        "su 0 /system/bin/pm list packages",
+        "su 0 /system/bin/cmd package list packages",
     ]
 
     raw = ""
@@ -409,12 +415,31 @@ def installed_packages():
         line = line.strip()
         if line.startswith("package:"):
             packages.append(line.replace("package:", "", 1))
+
+    if packages:
+        return sorted(set(packages))
+
+    return frida_app_packages()
+
+
+def frida_app_packages():
+    raw = out(frida_env_cmd(f"frida-ps -H {FRIDA_HOST} -a"))
+    packages = []
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        identifier = parts[-1]
+        if "." in identifier and not identifier.startswith("-"):
+            packages.append(identifier)
     return sorted(set(packages))
 
 
 def package_label(package_name):
-    dump_cmd = f"cmd package dump {shlex.quote(package_name)}"
+    dump_cmd = f"/system/bin/cmd package dump {shlex.quote(package_name)}"
     raw = out(dump_cmd)
+    if "not found" in raw.lower() or not raw.strip():
+        raw = out(f"su -c {shlex.quote(dump_cmd)}")
     for line in raw.splitlines():
         line = line.strip()
         if line.startswith("application-label:"):
@@ -426,7 +451,7 @@ def choose_package():
     query = input(c("Filter package name (press Enter to show all): ", "yellow")).strip().lower()
     packages = installed_packages()
     if not packages:
-        print(c("[-] Could not read installed packages with pm/cmd package.", "red"))
+        print(c("[-] Could not read installed packages with pm/cmd/frida-ps.", "red"))
         print(c("[-] Type the package manually from option 2.", "yellow"))
         return ""
 
