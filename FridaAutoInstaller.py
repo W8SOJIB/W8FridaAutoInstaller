@@ -315,14 +315,16 @@ def start_frida_server():
     server_target = f"{LOCAL_TMP}/{SERVER_NAME}"
     server_source = f"{LOCAL_TMP}/frida-server"
     
-    root_cmd = (
-        f"pkill -f {SERVER_NAME} || true; "
-        f"pkill -f frida-server || true; "
-        f"cp -f {server_source} {server_target} || true; "
-        f"chmod 755 {server_target} || true; "
-        f"nohup {server_target} -l {FRIDA_HOST} >/dev/null 2>&1 &"
-    )
-    run(f"su -c {shlex.quote(root_cmd)}")
+    # Run commands sequentially to isolate failure and avoid shell syntax issues
+    run(f"su -c 'pkill -f {SERVER_NAME}'", critical=False)
+    run(f"su -c 'pkill -f frida-server'", critical=False)
+    run(f"su -c 'cp -f {server_source} {server_target}'", critical=False)
+    run(f"su -c 'chmod 755 {server_target}'", critical=False)
+    
+    # Final launch
+    launch_cmd = f"su -c 'nohup {server_target} -l {FRIDA_HOST} >/dev/null 2>&1 &'"
+    run(launch_cmd, critical=False)
+    
     time.sleep(2)
 
     if frida_server_ok():
