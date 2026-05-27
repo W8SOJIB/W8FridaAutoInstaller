@@ -10,8 +10,9 @@ import urllib.request
 TOOL_NAME = "W8FridaAutoInstaller"
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
-FRIDA_HOST = "127.0.0.1:27042"
+FRIDA_HOST = "127.0.0.1:37123"
 LOCAL_TMP = "/data/local/tmp"
+SERVER_NAME = ".w8fs"
 
 COLORS = {
     "green": "\033[92m",
@@ -232,10 +233,11 @@ def download_frida_server():
     root_cmd = (
         f"mkdir -p {LOCAL_TMP}; "
         f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/frida-server; "
-        f"chmod 755 {LOCAL_TMP}/frida-server"
+        f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/{SERVER_NAME}; "
+        f"chmod 755 {LOCAL_TMP}/frida-server {LOCAL_TMP}/{SERVER_NAME}"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
-    print(c("[OK] frida-server installed to /data/local/tmp/frida-server", "green"))
+    print(c(f"[OK] frida-server installed to /data/local/tmp/{SERVER_NAME}", "green"))
     return True
 
 
@@ -301,11 +303,14 @@ def start_frida_server():
         download_frida_server()
 
     deploy_assets()
+    server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
     root_cmd = (
         f"cd {LOCAL_TMP}; "
-        "pkill frida-server >/dev/null 2>&1; "
-        "chmod 755 frida-server; "
-        "nohup ./frida-server >/dev/null 2>&1 &"
+        "pkill -f frida-server >/dev/null 2>&1; "
+        f"pkill -f {SERVER_NAME} >/dev/null 2>&1; "
+        f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
+        f"chmod 755 {SERVER_NAME}; "
+        f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
     time.sleep(2)
@@ -320,7 +325,7 @@ def start_frida_server():
 
 
 def stop_frida_server():
-    run("su -c 'pkill frida-server >/dev/null 2>&1'", critical=False)
+    run(f"su -c {shlex.quote(f'pkill -f frida-server >/dev/null 2>&1; pkill -f {SERVER_NAME} >/dev/null 2>&1')}", critical=False)
     print(c("[OK] frida-server stopped", "green"))
     return True
 
