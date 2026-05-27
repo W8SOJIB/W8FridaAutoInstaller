@@ -20,22 +20,31 @@ def out(cmd):
 print("\n[*] Updating Termux & installing dependencies...")
 run("pkg update -y && pkg upgrade -y", critical=False)
 
-run("pkg install wget xz-utils python clang make openssl libffi rust git -y")
+run("pkg install wget xz-utils python git which frida-python -y")
 
-# --- FIX frida-tools install (AUTO RETRY SYSTEM) ---
+# --- FIX frida-tools install (TERMUX FIRST) ---
 def install_frida_tools():
-    print("\n[*] Installing frida-tools (auto fix mode)...")
+    print("\n[*] Installing frida-tools...")
+
+    if os.system("frida-ps --version") == 0:
+        print("[+] frida-tools already installed")
+        return True
+
+    print("\n[*] Trying Termux package: pkg install frida-python -y")
+    if run("pkg install frida-python -y", critical=False):
+        if os.system("frida-ps --version") == 0:
+            print("[+] frida-tools installed successfully")
+            return True
+
+    print("[!] Termux package did not provide frida-ps, trying pip fallback...")
 
     commands = [
-        "pip install frida-tools --no-cache-dir --break-system-packages",
-        "pip install frida-tools --no-cache-dir",
-        "pip install frida-tools"
+        "pip install frida-tools --no-cache-dir --break-system-packages --only-binary=:all:",
+        "pip install frida-tools --no-cache-dir --only-binary=:all:"
     ]
-
     for c in commands:
         print(f"\n[*] Trying: {c}")
         if run(c, critical=False):
-            # test
             if os.system("frida-ps --version") == 0:
                 print("[+] frida-tools installed successfully")
                 return True
@@ -61,15 +70,31 @@ else:
 print("[+] Arch:", arch)
 
 # --- install frida-tools ---
-install_frida_tools()
+tools_ok = install_frida_tools()
 
-# --- get latest frida version ---
-print("\n[*] Fetching latest Frida version...")
-api = "https://api.github.com/repos/frida/frida/releases/latest"
+def get_installed_frida_version():
+    version = out("python -c \"import frida; print(frida.__version__)\"")
+    if version and "Traceback" not in version and "ModuleNotFoundError" not in version:
+        return version
+    return ""
 
-data = json.loads(urllib.request.urlopen(api).read().decode())
-version = data["tag_name"]
-ver = version.replace("v", "")
+# --- get matching frida version ---
+print("\n[*] Detecting Frida version...")
+ver = get_installed_frida_version()
+
+if ver:
+    version = ver
+    print("[+] Using installed frida-python version:", ver)
+else:
+    print("[!] Could not detect installed frida-python version")
+    print("[*] Fetching latest Frida version...")
+    api = "https://api.github.com/repos/frida/frida/releases/latest"
+    data = json.loads(urllib.request.urlopen(api).read().decode())
+    version = data["tag_name"]
+    ver = version.replace("v", "")
+
+if not version.startswith("v"):
+    version = f"v{version}"
 
 file = f"frida-server-{ver}-{arch}.xz"
 url = f"https://github.com/frida/frida/releases/download/{version}/{file}"
@@ -110,9 +135,15 @@ print("\n[*] Testing frida connection...")
 if os.system("frida-ps -U") != 0:
     print("[!] frida-ps not working, auto-repairing...")
 
-    run("pip install --force-reinstall frida-tools --break-system-packages", critical=False)
+    run("pkg install frida-python -y", critical=False)
 
     print("\n[*] Retesting...")
-    os.system("frida-ps -U")
+    tools_ok = os.system("frida-ps -U") == 0
+else:
+    tools_ok = True
 
-print("\n[✓] FULL AUTO FRIDA INSTALL COMPLETE")
+if not tools_ok:
+    print("[-] frida-ps is still not working. Run: pkg install frida-python -y")
+    exit(1)
+
+print("\n[OK] FULL AUTO FRIDA INSTALL COMPLETE")
