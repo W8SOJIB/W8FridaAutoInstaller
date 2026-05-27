@@ -126,6 +126,10 @@ def frida_env_cmd(cmd):
     )
 
 
+def frida_client_cmd(args):
+    return frida_env_cmd(f"frida -H {FRIDA_HOST} {args}")
+
+
 def frida_tool_ok():
     return run_timeout(frida_env_cmd("frida-ps --version"), timeout=8)
 
@@ -582,7 +586,7 @@ def run_frida_script():
             print(c("[-] Could not find app PID. Open the app manually, then retry mode 1.", "red"))
             return False
         print(c(f"[+] PID: {pid}", "cyan"))
-        command = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+        command = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
         return run_termux(command, critical=False)
 
     if mode == "attach":
@@ -590,20 +594,20 @@ def run_frida_script():
         pid = package_pid(package_name)
         if pid:
             print(c(f"[+] Detected PID: {pid}", "cyan"))
-        command = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+        command = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
         if run_termux(command, critical=False):
             return True
         if pid:
             print(c("[!] Package-name attach failed. Trying PID attach...", "yellow"))
-            fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+            fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
             return run_termux(fallback, critical=False)
         return False
 
     if mode == "frontmost":
-        command = f"cd {LOCAL_TMP} && ./frida -F -l {shlex.quote(script_name)}"
+        command = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
         return run_termux(command, critical=False)
 
-    command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+    command = frida_client_cmd(f"-f {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
     if run_termux(command, critical=False):
         return True
 
@@ -611,9 +615,9 @@ def run_frida_script():
     launch_package(package_name)
     pid = package_pid(package_name)
     if pid:
-        fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+        fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
     else:
-        fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+        fallback = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
     return run_termux(fallback, critical=False)
 
 
