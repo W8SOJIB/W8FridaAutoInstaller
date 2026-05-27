@@ -74,7 +74,13 @@ def out(cmd):
 
 def run_timeout(cmd, timeout=10):
     try:
-        result = subprocess.run(cmd, shell=True, timeout=timeout)
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            timeout=timeout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         print(c(f"[!] Timed out: {cmd}", "yellow"))
@@ -221,10 +227,18 @@ def deploy_assets():
 
     wrapper_path = os.path.join(LOCAL_TMP, "frida")
     wrapper = (
-        "#!/data/data/com.termux/files/usr/bin/sh\n"
+        "#!/data/data/com.termux/files/usr/bin/bash\n"
         "# W8FRIDA_LOCALTMP_WRAPPER\n"
         f"export LD_PRELOAD=\"{LIBPYTHON}${{LD_PRELOAD:+:$LD_PRELOAD}}\"\n"
-        f"exec \"{actual_frida}\" -H {FRIDA_HOST} \"$@\"\n"
+        "args=()\n"
+        "for arg in \"$@\"; do\n"
+        "    if [[ \"$arg\" == '-s' ]]; then\n"
+        "        args+=('-l')\n"
+        "    else\n"
+        "        args+=(\"$arg\")\n"
+        "    fi\n"
+        "done\n"
+        f"exec \"{actual_frida}\" -H {FRIDA_HOST} \"${{args[@]}}\"\n"
     )
 
     temp_wrapper = "frida-wrapper.tmp"
@@ -322,7 +336,6 @@ def choose_script():
 
 
 def run_frida_script():
-    deploy_assets()
     start_frida_server()
 
     script = choose_script()
@@ -343,7 +356,7 @@ def run_frida_script():
     print(c("\n[OK] Running Frida script", "green"))
     print(c(f"[+] Package: {package_name}", "cyan"))
     print(c(f"[+] Script: {script_name}", "cyan"))
-    command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -s {shlex.quote(script_name)}"
+    command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
     return run(f"su -c {shlex.quote(command)}", critical=False)
 
 
