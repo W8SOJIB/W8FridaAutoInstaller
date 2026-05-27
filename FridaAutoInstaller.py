@@ -391,7 +391,19 @@ def package_pid(package_name):
 
 
 def installed_packages():
-    raw = out("pm list packages")
+    commands = [
+        "pm list packages",
+        "cmd package list packages",
+        "su -c 'pm list packages'",
+        "su -c 'cmd package list packages'",
+    ]
+
+    raw = ""
+    for cmd in commands:
+        raw = out(cmd)
+        if "package:" in raw:
+            break
+
     packages = []
     for line in raw.splitlines():
         line = line.strip()
@@ -412,8 +424,14 @@ def package_label(package_name):
 
 def choose_package():
     query = input(c("Filter package name (press Enter to show all): ", "yellow")).strip().lower()
+    packages = installed_packages()
+    if not packages:
+        print(c("[-] Could not read installed packages with pm/cmd package.", "red"))
+        print(c("[-] Type the package manually from option 2.", "yellow"))
+        return ""
+
     matches = []
-    for pkg in installed_packages():
+    for pkg in packages:
         label = package_label(pkg)
         haystack = f"{pkg} {label}".lower()
         if not query or query in haystack:
