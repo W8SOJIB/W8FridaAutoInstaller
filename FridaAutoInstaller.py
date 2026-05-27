@@ -73,6 +73,20 @@ def out(cmd):
     return subprocess.getoutput(cmd).strip()
 
 
+def out_args(args, timeout=20):
+    try:
+        result = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
 def run_timeout(cmd, timeout=10):
     try:
         result = subprocess.run(
@@ -392,30 +406,27 @@ def package_pid(package_name):
 
 def installed_packages():
     commands = [
-        "pm list packages",
-        "cmd package list packages",
-        "/system/bin/pm list packages",
-        "/system/bin/cmd package list packages",
-        "/system/bin/dumpsys package packages",
-        "su -c 'pm list packages'",
-        "su -c 'cmd package list packages'",
-        "su -c '/system/bin/pm list packages'",
-        "su -c '/system/bin/cmd package list packages'",
-        "su -c '/system/bin/dumpsys package packages'",
-        "su -mm -c '/system/bin/pm list packages'",
-        "su -mm -c '/system/bin/cmd package list packages'",
-        "su -mm -c '/system/bin/dumpsys package packages'",
-        "su 0 /system/bin/pm list packages",
-        "su 0 /system/bin/cmd package list packages",
-        "su 0 /system/bin/dumpsys package packages",
-        "su -c 'cat /data/system/packages.list'",
-        "su -mm -c 'cat /data/system/packages.list'",
-        "su 0 cat /data/system/packages.list",
+        ["su", "-mm", "-c", "/system/bin/pm list packages"],
+        ["su", "-mm", "-c", "/system/bin/cmd package list packages"],
+        ["su", "-mm", "-c", "/system/bin/dumpsys package packages"],
+        ["su", "-mm", "-c", "cat /data/system/packages.list"],
+        ["/system/bin/pm", "list", "packages"],
+        ["/system/bin/cmd", "package", "list", "packages"],
+        ["/system/bin/dumpsys", "package", "packages"],
+        ["pm", "list", "packages"],
+        ["cmd", "package", "list", "packages"],
+        ["su", "-c", "/system/bin/pm list packages"],
+        ["su", "-c", "/system/bin/cmd package list packages"],
+        ["su", "-c", "/system/bin/dumpsys package packages"],
+        ["su", "-c", "cat /data/system/packages.list"],
+        ["su", "0", "/system/bin/pm", "list", "packages"],
+        ["su", "0", "/system/bin/cmd", "package", "list", "packages"],
+        ["su", "0", "cat", "/data/system/packages.list"],
     ]
 
     raw = ""
-    for cmd in commands:
-        raw = out(cmd)
+    for args in commands:
+        raw = out_args(args)
         if "package:" in raw or "Package [" in raw or raw.strip().startswith("android "):
             break
 
