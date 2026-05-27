@@ -396,18 +396,27 @@ def installed_packages():
         "cmd package list packages",
         "/system/bin/pm list packages",
         "/system/bin/cmd package list packages",
+        "/system/bin/dumpsys package packages",
         "su -c 'pm list packages'",
         "su -c 'cmd package list packages'",
         "su -c '/system/bin/pm list packages'",
         "su -c '/system/bin/cmd package list packages'",
+        "su -c '/system/bin/dumpsys package packages'",
+        "su -mm -c '/system/bin/pm list packages'",
+        "su -mm -c '/system/bin/cmd package list packages'",
+        "su -mm -c '/system/bin/dumpsys package packages'",
         "su 0 /system/bin/pm list packages",
         "su 0 /system/bin/cmd package list packages",
+        "su 0 /system/bin/dumpsys package packages",
+        "su -c 'cat /data/system/packages.list'",
+        "su -mm -c 'cat /data/system/packages.list'",
+        "su 0 cat /data/system/packages.list",
     ]
 
     raw = ""
     for cmd in commands:
         raw = out(cmd)
-        if "package:" in raw:
+        if "package:" in raw or "Package [" in raw or raw.strip().startswith("android "):
             break
 
     packages = []
@@ -415,6 +424,12 @@ def installed_packages():
         line = line.strip()
         if line.startswith("package:"):
             packages.append(line.replace("package:", "", 1))
+        elif line.startswith("Package [") and "]" in line:
+            packages.append(line.split("[", 1)[1].split("]", 1)[0])
+        elif line and " " in line and not line.startswith(("Error", "cmd:", "Exception")):
+            first = line.split()[0]
+            if "." in first or first == "android":
+                packages.append(first)
 
     if packages:
         return sorted(set(packages))
