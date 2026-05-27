@@ -34,6 +34,7 @@ SCRIPT_ORDER = [
     "FulterSSLUnpinning.js",
     "unissl.js",
     "unissl2.js",
+    "HideRoot.js",
     "AntiDebug.js",
 ]
 
