@@ -3,6 +3,7 @@ import subprocess
 import urllib.request
 import json
 import time
+import sys
 
 def run(cmd, critical=True):
     print(f"\n[+] {cmd}")
@@ -17,6 +18,46 @@ def run(cmd, critical=True):
 def out(cmd):
     return subprocess.getoutput(cmd).strip()
 
+PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
+
+def frida_env_cmd(cmd):
+    return f"LD_PRELOAD={LIBPYTHON} {cmd}"
+
+def fix_frida_tool_wrappers():
+    if not os.path.exists(LIBPYTHON):
+        return False
+
+    repaired = False
+    for tool in ["frida", "frida-ps", "frida-ls-devices", "frida-trace", "frida-discover", "frida-kill", "frida-apk"]:
+        path = out(f"command -v {tool}")
+        if not path or not os.path.isfile(path):
+            continue
+
+        real_path = f"{path}.real"
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                current = fh.read(256)
+            if "W8FRIDA_LDPRELOAD_WRAPPER" in current:
+                repaired = True
+                continue
+            if not os.path.exists(real_path):
+                os.rename(path, real_path)
+            wrapper = (
+                "#!/data/data/com.termux/files/usr/bin/sh\n"
+                "# W8FRIDA_LDPRELOAD_WRAPPER\n"
+                f"export LD_PRELOAD=\"{LIBPYTHON}${{LD_PRELOAD:+:$LD_PRELOAD}}\"\n"
+                f"exec \"{real_path}\" \"$@\"\n"
+            )
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(wrapper)
+            os.chmod(path, 0o755)
+            repaired = True
+        except OSError as exc:
+            print(f"[!] Could not repair {tool}: {exc}")
+
+    return repaired
+
 print("\n[*] Updating Termux & installing dependencies...")
 run("pkg update -y && pkg upgrade -y", critical=False)
 
@@ -26,13 +67,16 @@ run("pkg install wget xz-utils python git which frida-python -y")
 def install_frida_tools():
     print("\n[*] Installing frida-tools...")
 
-    if os.system("frida-ps --version") == 0:
+    fix_frida_tool_wrappers()
+
+    if os.system(frida_env_cmd("frida-ps --version")) == 0:
         print("[+] frida-tools already installed")
         return True
 
     print("\n[*] Trying Termux package: pkg install frida-python -y")
     if run("pkg install frida-python -y", critical=False):
-        if os.system("frida-ps --version") == 0:
+        fix_frida_tool_wrappers()
+        if os.system(frida_env_cmd("frida-ps --version")) == 0:
             print("[+] frida-tools installed successfully")
             return True
 
@@ -45,7 +89,8 @@ def install_frida_tools():
     for c in commands:
         print(f"\n[*] Trying: {c}")
         if run(c, critical=False):
-            if os.system("frida-ps --version") == 0:
+            fix_frida_tool_wrappers()
+            if os.system(frida_env_cmd("frida-ps --version")) == 0:
                 print("[+] frida-tools installed successfully")
                 return True
 
@@ -73,7 +118,7 @@ print("[+] Arch:", arch)
 tools_ok = install_frida_tools()
 
 def get_installed_frida_version():
-    version = out("python -c \"import frida; print(frida.__version__)\"")
+    version = out(frida_env_cmd("python -c \"import frida; print(frida.__version__)\""))
     if version and "Traceback" not in version and "ModuleNotFoundError" not in version:
         return version
     return ""
@@ -92,9 +137,6 @@ else:
     data = json.loads(urllib.request.urlopen(api).read().decode())
     version = data["tag_name"]
     ver = version.replace("v", "")
-
-if not version.startswith("v"):
-    version = f"v{version}"
 
 file = f"frida-server-{ver}-{arch}.xz"
 url = f"https://github.com/frida/frida/releases/download/{version}/{file}"
@@ -132,18 +174,20 @@ time.sleep(3)
 
 # --- test ---
 print("\n[*] Testing frida connection...")
-if os.system("frida-ps -U") != 0:
+if os.system(frida_env_cmd("frida-ps -U")) != 0:
     print("[!] frida-ps not working, auto-repairing...")
 
     run("pkg install frida-python -y", critical=False)
+    fix_frida_tool_wrappers()
 
     print("\n[*] Retesting...")
-    tools_ok = os.system("frida-ps -U") == 0
+    tools_ok = os.system(frida_env_cmd("frida-ps -U")) == 0
 else:
     tools_ok = True
 
 if not tools_ok:
-    print("[-] frida-ps is still not working. Run: pkg install frida-python -y")
+    print("[-] frida-ps is still not working.")
+    print(f"[-] Try manually: LD_PRELOAD={LIBPYTHON} frida-ps -U")
     exit(1)
 
 print("\n[OK] FULL AUTO FRIDA INSTALL COMPLETE")
