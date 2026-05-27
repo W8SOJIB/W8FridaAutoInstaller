@@ -215,6 +215,19 @@ def install_frida_tools():
     return False
 
 
+def push_frida_server():
+    if not os.path.exists("frida-server"):
+        return False
+    
+    src = os.path.abspath("frida-server")
+    root_cmd = (
+        f"mkdir -p {LOCAL_TMP}; "
+        f"cp {shlex.quote(src)} {LOCAL_TMP}/frida-server; "
+        f"chmod 755 {LOCAL_TMP}/frida-server"
+    )
+    return run(f"su -c {shlex.quote(root_cmd)}", critical=False)
+
+
 def download_frida_server():
     arch = detect_arch()
     ver = get_installed_frida_version() or latest_frida_version()
@@ -230,14 +243,8 @@ def download_frida_server():
     run(f"mv -f {shlex.quote(bin_name)} frida-server")
     run("chmod +x frida-server")
 
-    root_cmd = (
-        f"mkdir -p {LOCAL_TMP}; "
-        f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/frida-server; "
-        f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/{SERVER_NAME}; "
-        f"chmod 755 {LOCAL_TMP}/frida-server {LOCAL_TMP}/{SERVER_NAME}"
-    )
-    run(f"su -c {shlex.quote(root_cmd)}")
-    print(c(f"[OK] frida-server installed to /data/local/tmp/{SERVER_NAME}", "green"))
+    push_frida_server()
+    print(c(f"[OK] frida-server installed and pushed to {LOCAL_TMP}", "green"))
     return True
 
 
@@ -301,14 +308,16 @@ def start_frida_server():
     if not os.path.exists("frida-server"):
         print(c("[!] frida-server not found locally. Installing first...", "yellow"))
         download_frida_server()
+    else:
+        push_frida_server()
 
     deploy_assets()
     server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
     root_cmd = (
-        f"cd {LOCAL_TMP}; "
-        "pkill -f frida-server >/dev/null 2>&1; "
-        f"pkill -f {SERVER_NAME} >/dev/null 2>&1; "
-        f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
+        f"cd {LOCAL_TMP} || exit 1; "
+        "pkill -f frida-server >/dev/null 2>&1 || true; "
+        f"pkill -f {SERVER_NAME} >/dev/null 2>&1 || true; "
+        f"cp -f frida-server {SERVER_NAME} >/dev/null 2>&1; "
         f"chmod 755 {SERVER_NAME}; "
         f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
     )
