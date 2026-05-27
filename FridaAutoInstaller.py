@@ -10,7 +10,7 @@ import urllib.request
 TOOL_NAME = "W8FridaAutoInstaller"
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
-FRIDA_HOST = "localhost:37123"
+FRIDA_HOST = "127.0.0.1:37123"
 LOCAL_TMP = "/data/local/tmp"
 SERVER_NAME = ".w8fs"
 
@@ -321,12 +321,21 @@ def start_frida_server():
     run(f"su -c 'cp -f {server_source} {server_target}'", critical=False)
     run(f"su -c 'chmod 755 {server_target}'", critical=False)
     
-    # Final launch: listen on all interfaces to avoid loopback issues
-    launch_cmd = f"su -c '{server_target} -l 0.0.0.0:37123 >/dev/null 2>&1 &'"
-    run(launch_cmd, critical=False)
+    # Use subprocess.Popen to ensure the process survives the shell exit
+    print(c("[*] Starting frida-server...", "yellow"))
+    try:
+        subprocess.Popen(
+            ["su", "-c", f"{server_target} -l 127.0.0.1:37123"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setpgrp if hasattr(os, "setpgrp") else None
+        )
+    except Exception as e:
+        print(c(f"[-] Failed to start frida-server: {e}", "red"))
+        return False
     
     print(c("[*] Waiting for frida-server to initialize...", "yellow"))
-    time.sleep(4)
+    time.sleep(5)
 
     if frida_server_ok():
         print(c("[OK] frida-server is running", "green"))
