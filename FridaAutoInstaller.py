@@ -267,7 +267,10 @@ def deploy_assets():
         "        args+=(\"$arg\")\n"
         "    fi\n"
         "done\n"
-        f"exec \"{actual_frida}\" -H {FRIDA_HOST} \"${{args[@]}}\"\n"
+        "if [[ \"${W8FRIDA_USE_HOST:-0}\" == '1' ]]; then\n"
+        f"    exec \"{actual_frida}\" -H {FRIDA_HOST} \"${{args[@]}}\"\n"
+        "fi\n"
+        f"exec \"{actual_frida}\" -U \"${{args[@]}}\"\n"
     )
 
     temp_wrapper = "frida-wrapper.tmp"
@@ -370,9 +373,9 @@ def choose_script():
 
 def choose_run_mode():
     print(c("\nSelect run mode:", "cyan"))
-    print(c("1. Attach by PID after launching package (recommended)", "green"))
-    print(c("2. Attach running app by package name", "green"))
-    print(c("3. Spawn app by package name", "green"))
+    print(c("1. Spawn app early (recommended for root hide)", "green"))
+    print(c("2. Attach by PID after launching package", "green"))
+    print(c("3. Attach running app by package name", "green"))
     print(c("4. Attach frontmost app", "green"))
 
     selected = input(c("\nEnter mode [1]: ", "yellow")).strip()
@@ -380,11 +383,11 @@ def choose_run_mode():
         selected = "1"
 
     if selected == "1":
-        return "pid"
-    if selected == "2":
-        return "attach"
-    if selected == "3":
         return "spawn"
+    if selected == "2":
+        return "pid"
+    if selected == "3":
+        return "attach"
     if selected == "4":
         return "frontmost"
 
