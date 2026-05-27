@@ -10,9 +10,9 @@ import urllib.request
 TOOL_NAME = "W8FridaAutoInstaller"
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
-FRIDA_HOST = "127.0.0.1:27042"
+FRIDA_HOST = "127.0.0.1:37123"
 LOCAL_TMP = "/data/local/tmp"
-SERVER_NAME = "frida-server"
+SERVER_NAME = ".w8fs"
 
 COLORS = {
     "green": "\033[92m",
@@ -70,26 +70,6 @@ def run(cmd, critical=True):
     return True
 
 
-def run_termux(cmd, critical=True):
-    print(c(f"\n[+] {cmd}", "cyan"))
-    ok = run_timeout(cmd, timeout=None, silent=False)
-    if not ok:
-        print(c(f"[!] FAILED: {cmd}", "red"))
-        if critical:
-            raise SystemExit(1)
-    return ok
-
-
-def run_frida_client(cmd):
-    if run_termux(cmd, critical=False):
-        return True
-
-    print(c("[!] Frida command failed. Restarting server and retrying once...", "yellow"))
-    start_frida_server()
-    time.sleep(1)
-    return run_termux(cmd, critical=False)
-
-
 def out(cmd):
     return subprocess.getoutput(cmd).strip()
 
@@ -108,16 +88,14 @@ def out_args(args, timeout=20):
         return ""
 
 
-def run_timeout(cmd, timeout=10, silent=True):
+def run_timeout(cmd, timeout=10):
     try:
-        stdout = subprocess.DEVNULL if silent else None
-        stderr = subprocess.DEVNULL if silent else None
         result = subprocess.run(
             cmd,
             shell=True,
             timeout=timeout,
-            stdout=stdout,
-            stderr=stderr,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
@@ -134,10 +112,6 @@ def frida_env_cmd(cmd):
         f"XDG_DATA_HOME={home}/.local/share "
         f"LD_PRELOAD={shlex.quote(LIBPYTHON)} {cmd}"
     )
-
-
-def frida_client_cmd(args):
-    return frida_env_cmd(f"frida -H {FRIDA_HOST} {args}")
 
 
 def frida_tool_ok():
@@ -259,10 +233,11 @@ def download_frida_server():
     root_cmd = (
         f"mkdir -p {LOCAL_TMP}; "
         f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/frida-server; "
-        f"chmod 755 {LOCAL_TMP}/frida-server"
+        f"cp {shlex.quote(os.path.abspath('frida-server'))} {LOCAL_TMP}/{SERVER_NAME}; "
+        f"chmod 755 {LOCAL_TMP}/frida-server {LOCAL_TMP}/{SERVER_NAME}"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
-    print(c("[OK] frida-server installed to /data/local/tmp/frida-server", "green"))
+    print(c(f"[OK] frida-server installed to /data/local/tmp/{SERVER_NAME}", "green"))
     return True
 
 
@@ -331,10 +306,11 @@ def start_frida_server():
     server_path = f"{LOCAL_TMP}/{SERVER_NAME}"
     root_cmd = (
         f"cd {LOCAL_TMP}; "
-        "setenforce 0 >/dev/null 2>&1 || true; "
-        "pkill frida-server >/dev/null 2>&1 || true; "
+        "pkill -f frida-server >/dev/null 2>&1; "
+        f"pkill -f {SERVER_NAME} >/dev/null 2>&1; "
+        f"cp frida-server {SERVER_NAME} >/dev/null 2>&1; "
         f"chmod 755 {SERVER_NAME}; "
-        f"nohup {server_path} >/dev/null 2>&1 &"
+        f"nohup {server_path} -l {FRIDA_HOST} >/dev/null 2>&1 &"
     )
     run(f"su -c {shlex.quote(root_cmd)}")
     time.sleep(2)
@@ -349,8 +325,7 @@ def start_frida_server():
 
 
 def stop_frida_server():
-    stop_cmd = "pkill frida-server >/dev/null 2>&1 || true"
-    run(f"su -c {shlex.quote(stop_cmd)}", critical=False)
+    run(f"su -c {shlex.quote(f'pkill -f frida-server >/dev/null 2>&1; pkill -f {SERVER_NAME} >/dev/null 2>&1')}", critical=False)
     print(c("[OK] frida-server stopped", "green"))
     return True
 
@@ -411,9 +386,9 @@ def choose_script():
 
 def choose_run_mode():
     print(c("\nSelect run mode:", "cyan"))
-    print(c("1. Spawn app early (recommended for root hide)", "green"))
-    print(c("2. Attach by PID after launching package", "green"))
-    print(c("3. Attach running app by package name", "green"))
+    print(c("1. Attach by PID after launching package (recommended)", "green"))
+    print(c("2. Attach running app by package name", "green"))
+    print(c("3. Spawn app by package name", "green"))
     print(c("4. Attach frontmost app", "green"))
 
     selected = input(c("\nEnter mode [1]: ", "yellow")).strip()
@@ -421,11 +396,11 @@ def choose_run_mode():
         selected = "1"
 
     if selected == "1":
-        return "spawn"
-    if selected == "2":
         return "pid"
-    if selected == "3":
+    if selected == "2":
         return "attach"
+    if selected == "3":
+        return "spawn"
     if selected == "4":
         return "frontmost"
 
@@ -611,53 +586,39 @@ def run_frida_script():
             print(c("[-] Could not find app PID. Open the app manually, then retry mode 1.", "red"))
             return False
         print(c(f"[+] PID: {pid}", "cyan"))
-        command = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        if run_frida_client(command):
-            return True
-        print(c("[!] PID attach failed. Trying frontmost app attach...", "yellow"))
-        fallback = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        return run_frida_client(fallback)
+        command = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+        return run(f"su -c {shlex.quote(command)}", critical=False)
 
     if mode == "attach":
         launch_package(package_name)
         pid = package_pid(package_name)
         if pid:
             print(c(f"[+] Detected PID: {pid}", "cyan"))
-        command = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        if run_frida_client(command):
+        command = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+        if run(f"su -c {shlex.quote(command)}", critical=False):
             return True
         if pid:
             print(c("[!] Package-name attach failed. Trying PID attach...", "yellow"))
-            fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-            if run_frida_client(fallback):
-                return True
-        print(c("[!] Attach failed. Trying frontmost app attach...", "yellow"))
-        fallback = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        return run_frida_client(fallback)
+            fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
+            return run(f"su -c {shlex.quote(fallback)}", critical=False)
+        return False
 
     if mode == "frontmost":
-        command = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        return run_frida_client(command)
+        command = f"cd {LOCAL_TMP} && ./frida -F -l {shlex.quote(script_name)}"
+        return run(f"su -c {shlex.quote(command)}", critical=False)
 
-    command = frida_client_cmd(f"-f {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-    if run_frida_client(command):
+    command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+    if run(f"su -c {shlex.quote(command)}", critical=False):
         return True
 
     print(c("[!] Spawn failed. Trying attach mode after launching the app...", "yellow"))
     launch_package(package_name)
     pid = package_pid(package_name)
     if pid:
-        fallback = frida_client_cmd(f"-p {shlex.quote(pid)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        if run_frida_client(fallback):
-            return True
+        fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
     else:
-        fallback = frida_client_cmd(f"-n {shlex.quote(package_name)} -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-        if run_frida_client(fallback):
-            return True
-
-    print(c("[!] Attach fallback failed. Trying frontmost app attach...", "yellow"))
-    frontmost = frida_client_cmd(f"-F -l {shlex.quote(f'{LOCAL_TMP}/{script_name}')}")
-    return run_frida_client(frontmost)
+        fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
+    return run(f"su -c {shlex.quote(fallback)}", critical=False)
 
 
 def menu():
