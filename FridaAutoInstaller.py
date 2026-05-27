@@ -88,7 +88,14 @@ def run_timeout(cmd, timeout=10):
 
 
 def frida_env_cmd(cmd):
-    return f"LD_PRELOAD={shlex.quote(LIBPYTHON)} {cmd}"
+    home = shlex.quote(f"{PREFIX}/tmp/frida-home")
+    return (
+        f"HOME={home} "
+        f"XDG_CONFIG_HOME={home}/.config "
+        f"XDG_CACHE_HOME={home}/.cache "
+        f"XDG_DATA_HOME={home}/.local/share "
+        f"LD_PRELOAD={shlex.quote(LIBPYTHON)} {cmd}"
+    )
 
 
 def frida_tool_ok():
@@ -229,6 +236,11 @@ def deploy_assets():
     wrapper = (
         "#!/data/data/com.termux/files/usr/bin/bash\n"
         "# W8FRIDA_LOCALTMP_WRAPPER\n"
+        f"export HOME=\"{PREFIX}/tmp/frida-home\"\n"
+        "export XDG_CONFIG_HOME=\"$HOME/.config\"\n"
+        "export XDG_CACHE_HOME=\"$HOME/.cache\"\n"
+        "export XDG_DATA_HOME=\"$HOME/.local/share\"\n"
+        "mkdir -p \"$HOME\" \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" \"$XDG_DATA_HOME\"\n"
         f"export LD_PRELOAD=\"{LIBPYTHON}${{LD_PRELOAD:+:$LD_PRELOAD}}\"\n"
         "args=()\n"
         "for arg in \"$@\"; do\n"
