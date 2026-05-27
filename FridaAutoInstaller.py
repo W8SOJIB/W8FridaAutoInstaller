@@ -70,6 +70,16 @@ def run(cmd, critical=True):
     return True
 
 
+def run_termux(cmd, critical=True):
+    print(c(f"\n[+] {cmd}", "cyan"))
+    ok = run_timeout(cmd, timeout=None, silent=False)
+    if not ok:
+        print(c(f"[!] FAILED: {cmd}", "red"))
+        if critical:
+            raise SystemExit(1)
+    return ok
+
+
 def out(cmd):
     return subprocess.getoutput(cmd).strip()
 
@@ -88,14 +98,16 @@ def out_args(args, timeout=20):
         return ""
 
 
-def run_timeout(cmd, timeout=10):
+def run_timeout(cmd, timeout=10, silent=True):
     try:
+        stdout = subprocess.DEVNULL if silent else None
+        stderr = subprocess.DEVNULL if silent else None
         result = subprocess.run(
             cmd,
             shell=True,
             timeout=timeout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
@@ -267,10 +279,7 @@ def deploy_assets():
         "        args+=(\"$arg\")\n"
         "    fi\n"
         "done\n"
-        "if [[ \"${W8FRIDA_USE_HOST:-0}\" == '1' ]]; then\n"
-        f"    exec \"{actual_frida}\" -H {FRIDA_HOST} \"${{args[@]}}\"\n"
-        "fi\n"
-        f"exec \"{actual_frida}\" -U \"${{args[@]}}\"\n"
+        f"exec \"{actual_frida}\" -H {FRIDA_HOST} \"${{args[@]}}\"\n"
     )
 
     temp_wrapper = "frida-wrapper.tmp"
@@ -574,7 +583,7 @@ def run_frida_script():
             return False
         print(c(f"[+] PID: {pid}", "cyan"))
         command = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
-        return run(f"su -c {shlex.quote(command)}", critical=False)
+        return run_termux(command, critical=False)
 
     if mode == "attach":
         launch_package(package_name)
@@ -582,20 +591,20 @@ def run_frida_script():
         if pid:
             print(c(f"[+] Detected PID: {pid}", "cyan"))
         command = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
-        if run(f"su -c {shlex.quote(command)}", critical=False):
+        if run_termux(command, critical=False):
             return True
         if pid:
             print(c("[!] Package-name attach failed. Trying PID attach...", "yellow"))
             fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
-            return run(f"su -c {shlex.quote(fallback)}", critical=False)
+            return run_termux(fallback, critical=False)
         return False
 
     if mode == "frontmost":
         command = f"cd {LOCAL_TMP} && ./frida -F -l {shlex.quote(script_name)}"
-        return run(f"su -c {shlex.quote(command)}", critical=False)
+        return run_termux(command, critical=False)
 
     command = f"cd {LOCAL_TMP} && ./frida -f {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
-    if run(f"su -c {shlex.quote(command)}", critical=False):
+    if run_termux(command, critical=False):
         return True
 
     print(c("[!] Spawn failed. Trying attach mode after launching the app...", "yellow"))
@@ -605,7 +614,7 @@ def run_frida_script():
         fallback = f"cd {LOCAL_TMP} && ./frida -p {shlex.quote(pid)} -l {shlex.quote(script_name)}"
     else:
         fallback = f"cd {LOCAL_TMP} && ./frida -n {shlex.quote(package_name)} -l {shlex.quote(script_name)}"
-    return run(f"su -c {shlex.quote(fallback)}", critical=False)
+    return run_termux(fallback, critical=False)
 
 
 def menu():
