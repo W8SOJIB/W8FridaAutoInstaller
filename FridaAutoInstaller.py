@@ -4,15 +4,45 @@ import shlex
 import subprocess
 import sys
 import time
+import random
+import string
 import urllib.request
 
 
 TOOL_NAME = "W8FridaAutoInstaller"
 PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 LIBPYTHON = f"{PREFIX}/lib/libpython{sys.version_info.major}.{sys.version_info.minor}.so"
-FRIDA_HOST = "127.0.0.1:37123"
+CONFIG_FILE = "config.json"
+
+DEFAULT_CONFIG = {
+    "frida_port": 37123,
+    "server_name": ".w8fs",
+    "last_package": "",
+}
+
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return {**DEFAULT_CONFIG, **json.load(f)}
+        except Exception:
+            pass
+    return DEFAULT_CONFIG.copy()
+
+
+def save_config(config):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=4)
+    except Exception:
+        pass
+
+
+CONFIG = load_config()
+FRIDA_HOST = f"127.0.0.1:{CONFIG['frida_port']}"
 LOCAL_TMP = "/data/local/tmp"
-SERVER_NAME = ".w8fs"
+SERVER_NAME = CONFIG["server_name"]
 
 COLORS = {
     "green": "\033[92m",
@@ -56,6 +86,7 @@ def banner():
     print(c("=" * 48, "cyan"))
     type_line(f"        {TOOL_NAME}", "green", 0.01)
     print(c("        Termux Frida SSL Unpinning Tool", "yellow"))
+    print(c("        Created by: W8SOJIB / W8Team", "cyan"))
     print(c("=" * 48, "cyan"))
 
 
@@ -315,17 +346,17 @@ def start_frida_server():
     server_target = f"{LOCAL_TMP}/{SERVER_NAME}"
     server_source = f"{LOCAL_TMP}/frida-server"
     
-    # Run commands sequentially to isolate failure and avoid shell syntax issues
+    # Clean up old processes
     run(f"su -c 'pkill -f {SERVER_NAME}'", critical=False)
     run(f"su -c 'pkill -f frida-server'", critical=False)
     run(f"su -c 'cp -f {server_source} {server_target}'", critical=False)
     run(f"su -c 'chmod 755 {server_target}'", critical=False)
     
     # Use subprocess.Popen to ensure the process survives the shell exit
-    print(c("[*] Starting frida-server...", "yellow"))
+    print(c(f"[*] Starting frida-server as {SERVER_NAME} on port {CONFIG['frida_port']}...", "yellow"))
     try:
         subprocess.Popen(
-            ["su", "-c", f"{server_target} -l 127.0.0.1:37123"],
+            ["su", "-c", f"{server_target} -l 127.0.0.1:{CONFIG['frida_port']}"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setpgrp if hasattr(os, "setpgrp") else None
@@ -571,6 +602,17 @@ def run_frida_script():
         print(c("[-] Package name is required", "red"))
         return False
 
+    if package_name:
+        CONFIG["last_package"] = package_name
+        save_config(CONFIG)
+        frameworks = detect_framework(package_name)
+        if frameworks:
+            print(c(f"[!] Frameworks detected: {', '.join(frameworks)}", "yellow"))
+            if "Flutter" in frameworks:
+                print(c("[!] Recommended scripts: unissl.js or unissl2.js", "cyan"))
+            elif "Unity" in frameworks:
+                print(c("[!] Recommended: Check for il2cpp scripts", "cyan"))
+
     script_path = os.path.abspath(script)
     script_name = os.path.basename(script)
 
@@ -621,6 +663,119 @@ def run_frida_script():
         return run(get_frida_cmd(f"-n {shlex.quote(package_name)}"), critical=False)
 
 
+def detect_framework(package_name):
+    print(c(f"[*] Analyzing {package_name} framework...", "yellow"))
+    path = out(f"su -c 'pm path {shlex.quote(package_name)}'").replace("package:", "")
+    if not path:
+        return []
+
+    frameworks = []
+    # Check for common framework libraries
+    libs = out(f"su -c 'unzip -l {shlex.quote(path)}'").lower()
+    
+    mapping = {
+        "libflutter.so": "Flutter",
+        "libunity.so": "Unity",
+        "libreactnativejni.so": "React Native",
+        "libmono.so": "Xamarin / Unity Mono",
+        "libgodot_android.so": "Godot",
+        "libpython": "Kivy / Python-for-Android",
+    }
+
+    for lib, name in mapping.items():
+        if lib in libs:
+            frameworks.append(name)
+            
+    return frameworks
+
+
+def settings_menu():
+    global CONFIG, FRIDA_HOST, SERVER_NAME
+    while True:
+        banner()
+        print(c("\n--- Settings ---", "cyan"))
+        print(c(f"1. Frida Port: {CONFIG['frida_port']}", "green"))
+        print(c(f"2. Server Process Name: {CONFIG['server_name']}", "green"))
+        print(c("3. Generate Random Stealth Name", "green"))
+        print(c("0. Back", "red"))
+
+        choice = input(c("\nSelect option: ", "yellow")).strip()
+
+        if choice == "1":
+            port = input(c("Enter new port (default 37123): ", "yellow")).strip()
+            if port.isdigit():
+                CONFIG["frida_port"] = int(port)
+                save_config(CONFIG)
+                FRIDA_HOST = f"127.0.0.1:{CONFIG['frida_port']}"
+                print(c("[OK] Port updated", "green"))
+        elif choice == "2":
+            name = input(c("Enter new server name (example .mysrv): ", "yellow")).strip()
+            if name:
+                CONFIG["server_name"] = name
+                save_config(CONFIG)
+                SERVER_NAME = CONFIG["server_name"]
+                print(c("[OK] Server name updated", "green"))
+        elif choice == "3":
+            random_name = "." + "".join(random.choices(string.ascii_lowercase, k=6))
+            CONFIG["server_name"] = random_name
+            save_config(CONFIG)
+            SERVER_NAME = CONFIG["server_name"]
+            print(c(f"[OK] Random name generated: {random_name}", "green"))
+        elif choice == "0":
+            break
+        else:
+            print(c("[-] Invalid option", "red"))
+        
+        time.sleep(1)
+
+
+def uninstall_frida():
+    print(c("\n[*] Uninstalling Frida and cleaning up...", "yellow"))
+    
+    # 1. Kill running processes
+    stop_frida_server()
+    
+    # 2. Restore tool wrappers
+    for tool in ["frida", "frida-ps", "frida-ls-devices", "frida-trace", "frida-discover", "frida-kill", "frida-apk"]:
+        path = out(f"command -v {tool}")
+        if not path:
+            continue
+        real_path = f"{path}.real"
+        if os.path.exists(real_path):
+            try:
+                os.remove(path)
+                os.rename(real_path, path)
+                print(c(f"[+] Restored {tool}", "green"))
+            except OSError as e:
+                print(c(f"[!] Could not restore {tool}: {e}", "yellow"))
+
+    # 3. Clean /data/local/tmp
+    scripts = available_scripts()
+    script_targets = [f"{LOCAL_TMP}/{os.path.basename(s)}" for s in scripts]
+    targets = [
+        f"{LOCAL_TMP}/frida-server",
+        f"{LOCAL_TMP}/{SERVER_NAME}",
+        f"{LOCAL_TMP}/frida",
+    ] + script_targets
+    
+    for target in targets:
+        run(f"su -c 'rm -f {target}'", critical=False)
+    
+    # 4. Remove frida-home
+    frida_home = f"{PREFIX}/tmp/frida-home"
+    if os.path.exists(frida_home):
+        run(f"rm -rf {shlex.quote(frida_home)}", critical=False)
+        print(c("[+] Removed frida-home", "green"))
+
+    # 5. Remove local temp files
+    if os.path.exists("frida-wrapper.tmp"):
+        os.remove("frida-wrapper.tmp")
+
+    print(c("\n[*] Optional: You can now run 'pkg uninstall frida-python' to remove Termux packages.", "cyan"))
+    print(c("[OK] Uninstallation complete", "green"))
+    return True
+
+
 def menu():
     while True:
         banner()
@@ -629,6 +784,8 @@ def menu():
         print(c("3. Stop Frida", "green"))
         print(c("4. Run Frida Script", "green"))
         print(c("5. Package Finder", "green"))
+        print(c("6. Settings (Port/Stealth)", "cyan"))
+        print(c("7. Uninstall Frida", "red"))
         print(c("0. Exit", "red"))
 
         choice = input(c("\nSelect option: ", "yellow")).strip()
@@ -645,6 +802,10 @@ def menu():
             package_name = choose_package()
             if package_name:
                 print(c(f"[OK] Selected package: {package_name}", "green"))
+        elif choice == "6":
+            settings_menu()
+        elif choice == "7":
+            uninstall_frida()
         elif choice == "0":
             print(c("Bye", "cyan"))
             break
