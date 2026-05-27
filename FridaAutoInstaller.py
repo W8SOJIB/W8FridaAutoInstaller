@@ -411,18 +411,13 @@ def package_label(package_name):
 
 
 def choose_package():
-    query = input(c("Search app/package name: ", "yellow")).strip().lower()
-    if not query:
-        return ""
-
+    query = input(c("Filter package name (press Enter to show all): ", "yellow")).strip().lower()
     matches = []
     for pkg in installed_packages():
         label = package_label(pkg)
         haystack = f"{pkg} {label}".lower()
-        if query in haystack:
+        if not query or query in haystack:
             matches.append((pkg, label))
-        if len(matches) >= 30:
-            break
 
     if not matches:
         print(c("[-] No package found", "red"))
